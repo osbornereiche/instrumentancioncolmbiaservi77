@@ -1,0 +1,92 @@
+import { PAGE_ROUTES } from './routes.js';
+import { FIREBASE_WEB_CONFIG } from './firebase-web.js';
+
+/** Alineado con Firestore/toDocId: sin "/", longitud acotada. */
+const DOC_ID_RE = /^[^/]{4,500}$/;
+
+function parseAllowedOrigins(env) {
+  const raw = (env.ALLOWED_ORIGINS || '').trim();
+  if (!raw) {
+    return null;
+  }
+  return raw.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+}
+
+function isOriginAllowed(request, env) {
+  const allowed = parseAllowedOrigins(env);
+  if (!allowed || allowed.length === 0) {
+    return true;
+  }
+  const origin = request.headers.get('Origin');
+  if (!origin) {
+    return true;
+  }
+  return allowed.indexOf(origin) >= 0;
+}
+
+function corsHeaders(request, env) {
+  const origin = request.headers.get('Origin');
+  const allowed = parseAllowedOrigins(env);
+  const headers = {
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Accept',
+    'Vary': 'Origin',
+  };
+  if (origin && (!allowed || allowed.indexOf(origin) >= 0)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+  } else if (!allowed) {
+    headers['Access-Control-Allow-Origin'] = '*';
+  }
+  return headers;
+}
+
+function jsonResponse(request, env, body, status) {
+  const headers = corsHeaders(request, env);
+  headers['Content-Type'] = 'application/json; charset=utf-8';
+  headers['Cache-Control'] = 'no-store';
+  return new Response(JSON.stringify(body), { status: status, headers: headers });
+}
+
+function isApiPath(pathname) {
+  return pathname === '/api/route' || pathname === '/api/firebase-config';
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+
+    if (isApiPath(url.pathname) && request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: corsHeaders(request, env) });
+    }
+
+    if (!isApiPath(url.pathname) || request.method !== 'GET') {
+      return new Response('Not Found', { status: 404 });
+    }
+
+    if (!isOriginAllowed(request, env)) {
+      return jsonResponse(request, env, { error: 'forbidden_origin' }, 403);
+    }
+
+    if (url.pathname === '/api/firebase-config') {
+      return jsonResponse(request, env, FIREBASE_WEB_CONFIG, 200);
+    }
+
+    const page = Number(url.searchParams.get('page'));
+    const docId = (url.searchParams.get('docId') || '').trim();
+
+    if (!docId || !DOC_ID_RE.test(docId)) {
+      return jsonResponse(request, env, { error: 'invalid_doc_id' }, 400);
+    }
+
+    if (!Number.isInteger(page) || page <= 0) {
+      return jsonResponse(request, env, { error: 'invalid_page' }, 400);
+    }
+
+    const routeUrl = PAGE_ROUTES[page];
+    if (!routeUrl) {
+      return jsonResponse(request, env, { error: 'unknown_page' }, 404);
+    }
+
+    return jsonResponse(request, env, { url: routeUrl }, 200);
+  },
+};

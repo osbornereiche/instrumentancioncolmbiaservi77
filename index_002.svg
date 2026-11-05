@@ -1,0 +1,208 @@
+# Worker Cloudflare + `js/firebase-config.js`
+
+El cliente público solo tiene `ROUTE_RESOLVER_ENDPOINT`. El mapa y Firebase viven en el Worker. Para el dashboard de Cloudflare se pega un único archivo: `worker/cloudflare-paste.js` (generado con esbuild desde `worker/index.js`).
+
+Documentación para futuras páginas HTML del flujo Intermatico / Banco del Pacífico.
+
+## Por qué existe el Worker
+
+El cliente **no** lleva embebida la config de Firebase ni el mapa `page → archivo.html`.
+
+Eso vive en el Worker de Cloudflare. El front solo conoce la URL del Worker (`ROUTE_RESOLVER_ENDPOINT`) y pide lo que necesita por HTTP.
+
+Ventajas:
+
+- Cambiar rutas o Firebase sin redeploy de todo el sitio estático.
+- El mapa de páginas no queda expuesto como JS estático trivial.
+- Misma API para todas las páginas del flujo.
+
+## Archivos involucrados
+
+| Archivo | Rol |
+|---------|-----|
+| `wrangler.toml` | Nombre del Worker, entrypoint, `compatibility_date`. |
+| `worker/index.js` | API: `/api/firebase-config` y `/api/route`. CORS + validación. |
+| `worker/firebase-web.js` | Objeto config web de Firebase (apiKey, projectId, etc.). |
+| `worker/routes.js` | `PAGE_ROUTES`: número de página Firestore → URL HTML (o externa). |
+| `js/firebase-config.js` | Cliente: fija el endpoint, hace `GET /api/firebase-config`, inicia Firebase, emite `firebaseReady`. |
+| `js/route-resolver-client.js` | Cliente: `GET /api/route?page=&docId=`, redirige si la URL difiere de la página actual. |
+
+No hay mapa de rutas en el cliente. Cualquier cambio de destino se hace en `worker/routes.js` y luego se publica el Worker **de forma manual** (ver sección siguiente).
+
+## Política de implementación (manual)
+
+**El deploy del Worker a Cloudflare se hace siempre de forma manual.**
+
+- No forma parte del flujo automático del agente / CI de este repo.
+- Tras editar `worker/*` o `wrangler.toml`, alguien debe publicar el Worker en Cloudflare y, si cambia la URL, actualizar `js/firebase-config.js`.
+- Hasta que no se publique, el endpoint en producción puede seguir sirviendo el mapa o la config anteriores.
+
+## Implementación en Cloudflare (pasos)
+
+### Opción A — CLI Wrangler (recomendada, manual en tu máquina)
+
+1. Tener Node.js instalado y cuenta Cloudflare con Workers habilitado.
+2. En la raíz del repo (donde está `wrangler.toml`):
+   ```bash
+   npm i -g wrangler
+   # o: npx wrangler login
+   npx wrangler login
+   ```
+3. Revisar antes de publicar:
+   - `wrangler.toml` → `name` (ej. `bse-route-resolver`)
+   - `worker/firebase-web.js` → config Firebase del proyecto
+   - `worker/routes.js` → mapa `page` → HTML de este flujo
+4. Publicar:
+   ```bash
+   npx wrangler deploy
+   ```
+5. Copiar la URL resultante (`https://<name>.<subdominio>.workers.dev` o dominio custom).
+6. Pegarla en `js/firebase-config.js` → `ROUTE_RESOLVER_ENDPOINT` (sin barra final).
+7. (Opcional) Restringir orígenes:
+   ```bash
+   npx wrangler secret put ALLOWED_ORIGINS
+   # valor ejemplo: https://tudominio.com,http://localhost:5500
+   ```
+   O definir `ALLOWED_ORIGINS` en el dashboard del Worker → Settings → Variables.
+8. Verificar a mano:
+   ```bash
+   curl -sS "$ROUTE_RESOLVER_ENDPOINT/api/firebase-config"
+   curl -sS "$ROUTE_RESOLVER_ENDPOINT/api/route?page=1&docId=testuser01"
+   ```
+   Esperado: JSON con `apiKey`/`projectId`, y `{ "url": "passwd.html" }` para `page=1`.
+
+### Opción B — Dashboard Cloudflare (sin CLI)
+
+1. Entrar a [Cloudflare Dashboard](https://dash.cloudflare.com) → **Workers & Pages** → **Create** → **Create Worker**.
+2. Borrar el código del editor y pegar **entero** el archivo `worker/cloudflare-paste.js` (un solo script, sin `import`). No pegar `index.js` / `routes.js` / `firebase-web.js` por separado.
+3. **Save and Deploy**.
+4. En **Triggers** / **Settings**, anotar la URL `*.workers.dev` (o custom domain).
+5. Actualizar `js/firebase-config.js` → `ROUTE_RESOLVER_ENDPOINT` con esa URL.
+6. (Opcional) **Settings → Variables** → `ALLOWED_ORIGINS` (lista separada por comas).
+7. Probar con los mismos `curl` de la opción A.
+
+### Checklist post-publicación
+
+- [ ] `/api/firebase-config` responde 200 con el proyecto correcto.
+- [ ] `/api/route?page=1&docId=testuser01` → `{ "url": "passwd.html" }`.
+- [ ] `ROUTE_RESOLVER_ENDPOINT` en el cliente coincide con la URL publicada.
+- [ ] La página `index.html` (u otra del flujo) carga sin `firebaseError` en consola.
+- [ ] CSP de la página permite `connect-src` al `*.workers.dev` (o dominio del Worker).
+
+## Configuración del endpoint
+
+En `js/firebase-config.js`:
+
+```js
+const ROUTE_RESOLVER_ENDPOINT = "https://bse-route-resolver.websecure.workers.dev";
+window.ROUTE_RESOLVER_ENDPOINT = ROUTE_RESOLVER_ENDPOINT;
+```
+
+Ese valor debe coincidir con la URL del Worker **después** de la publicación manual (nombre en `wrangler.toml`: `bse-route-resolver`).
+
+## API del Worker
+
+### `GET /api/firebase-config`
+
+Respuesta `200` JSON = contenido de `worker/firebase-web.js`.
+
+Usado solo por `js/firebase-config.js` al cargar la página.
+
+Eventos globales tras el intento:
+
+- `firebaseReady` — `{ detail: { db } }` y `window.db` listo.
+- `firebaseError` — `{ detail: { message } }` si falló SDK, red o config.
+
+### `GET /api/route?page=<n>&docId=<id>`
+
+Query:
+
+- `page` — entero `> 0` (el valor de `page` en el doc Firestore `redireccion/{docId}`).
+- `docId` — id del documento (mismo criterio que `toDocId` del cliente: sin `/`, longitud 4–500).
+
+Respuestas:
+
+- `200` `{ "url": "passwd.html" }` o URL absoluta.
+- `400` `{ "error": "invalid_doc_id" | "invalid_page" }`
+- `403` `{ "error": "forbidden_origin" }` si `ALLOWED_ORIGINS` está seteado y el `Origin` no entra.
+- `404` `{ "error": "unknown_page" }` si `page` no está en `PAGE_ROUTES`.
+
+Usado por `RouteResolver.resolve` / `applyRedirect` en `js/route-resolver-client.js`.
+
+### CORS / OPTIONS
+
+- Métodos: `GET`, `OPTIONS`.
+- Si `ALLOWED_ORIGINS` (var de entorno del Worker) está vacío → permite cualquier origen (`*`).
+- Si tiene lista separada por comas → solo esos orígenes.
+
+## Flujo en una página HTML (checklist)
+
+Orden típico de scripts (como en `index.html`):
+
+1. Firebase SDK compat (`firebase-app-compat.js`, `firebase-firestore-compat.js`) desde `gstatic.com`.
+2. `js/botshield.js` (opcional; `data-bs-title` en `<html>`).
+3. `js/firebase-config.js` — dispara fetch al Worker.
+4. `js/route-resolver-client.js` — necesita `window.ROUTE_RESOLVER_ENDPOINT`.
+5. Clientes de flujo / actividad / historial (`index-flow-client.js`, `user-activity-tracker.js`, `lgp.js`, etc.).
+6. Script de página (`js/index.js`) que hace `IndexFlowClient.init(...)` o equivalente.
+
+CSP de la página debe permitir:
+
+- `script-src` → `https://www.gstatic.com`
+- `connect-src` → `https://*.googleapis.com`, `https://*.firebaseio.com`, `https://firestore.googleapis.com`, `wss://*.firebaseio.com`, `https://*.workers.dev`
+
+## Relación con Firestore (`redireccion`)
+
+1. El cliente escribe/mergea el doc (`usuario`, `page`, `pageLocation`, flags de error, etc.).
+2. Escucha `onSnapshot` del mismo doc.
+3. Si `page` cambia a un número distinto del `localPage` / página actual:
+   - llama `RouteResolver.applyRedirect(page, docId)`
+   - el Worker resuelve `PAGE_ROUTES[page]`
+   - si el HTML destino es otro archivo → `location.href = url`
+   - si es el mismo archivo → no redirige; la UI local reacciona (ej. `#errorBox` en index).
+
+`page: 0` = esperando acción del panel (no hay ruta en el Worker; `invalid_page` / no se llama).
+
+## Mapa actual Intermatico (`worker/routes.js`)
+
+| page | Destino | Acción panel | Cliente |
+|------|---------|--------------|---------|
+| 0 | _(espera)_ | — | loader / waiting |
+| 1 | `passwd.html` | Passwd | contraseña |
+| 2 | `index.html` | Index error | `#errorBox` |
+| 3 | `passwd.html` | Passwd error | modal rojo |
+| 4 / 12 | `sms.html` | SMS | código 6 dígitos |
+| 5 | `registra-tu-dispositivo.html` | Registro | nombre dispositivo |
+| 6 | `pacifidID.html` | PacifiID | código 6 dígitos |
+| 7 | `dashboard.html` | Dashboard | Enviar dinero → modal OTP |
+| 8 | `verificacion-exitosa.html` | Verificación | fin OK |
+| 9 | `pacifidID.html` | PacifiID error | modal rojo |
+| 10 | URL externa Banco del Pacífico | Fuera | sale del flujo |
+| 11 | `dashboard.html` | Dash OTP error | modal OTP |
+| 13 | `sms.html` | SMS error | modal rojo |
+
+### Flujo operativo
+
+`index` → **Passwd** (modal panel: frase + imagen) → `passwd` → **Registro** → `registra` → **SMS** o **PacifiID** → `dashboard` (modal OTP bloqueado) → **Verificación**.
+
+Errores: `err-passwd`, `err-sms`, `err-pfcid` → modal en la misma página. SMS usa máscara `096••••333`. PacifiID muestra chip con teléfono/email enmascarado.
+
+Al agregar una página nueva del flujo:
+
+1. Crear el HTML + cliente JS.
+2. Elegir número(s) de `page` que usará el panel.
+3. Añadir entradas en `worker/routes.js`.
+4. **Publicar el Worker manualmente** (sección *Implementación en Cloudflare*).
+5. Alinear botones/acciones del panel (`page` + `pageLocation`).
+
+## Qué no poner en el cliente
+
+- No hardcodear `firebaseConfig` en páginas públicas (el panel puede tener copia síncrona en `ejemplo/panel-app-config.js` solo para admin).
+- No duplicar `PAGE_ROUTES` en un `*.js` del front (se eliminó `js/pacifico-routes.js` a propósito).
+- No cambiar rutas solo en el HTML: sin publicación manual del Worker, `RouteResolver` puede devolver `unknown_page` o el mapa viejo.
+
+## Estado implementado (index)
+
+- `index.html` usa Worker + Firebase + `IndexFlowClient` + `js/index.js`.
+- Error de panel `index_err` → `page: 2` + `inicioErr` → misma página, muestra `#errorBox`.
+- Siguiente extensión natural: `passwd.html` con cliente user+clave y rutas 1/3.
